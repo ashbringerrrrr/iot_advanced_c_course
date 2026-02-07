@@ -231,6 +231,28 @@ void go(snake_t *head) {
     
 }
 
+int checkDirection(snake_t* snake, int32_t key) {
+    int new_direction = snake->direction;
+
+    if (key == snake->controls.up) {
+        new_direction = UP;
+    } else if (key == snake->controls.down) {
+        new_direction = DOWN;
+    } else if (key == snake->controls.left) {
+        new_direction = LEFT;
+    } else if (key == snake->controls.right) {
+        new_direction = RIGHT;
+    }
+
+    if ((snake->direction == LEFT && new_direction == RIGHT) ||
+        (snake->direction == RIGHT && new_direction == LEFT) ||
+        (snake->direction == UP && new_direction == DOWN) ||
+        (snake->direction == DOWN && new_direction == UP)) {
+        return 0;
+    }
+    return 1;
+}
+
 // Change direction for all snakes
 void changeAllDirections(snake_t snakes[], size_t num_snakes, const int32_t key) {
     for (size_t i = 0; i < num_snakes; i++) {
@@ -279,14 +301,9 @@ void changeAllDirections(snake_t snakes[], size_t num_snakes, const int32_t key)
                 new_direction = LEFT;
         }
 
-        if ((snakes[i].direction == LEFT && new_direction == RIGHT) ||
-            (snakes[i].direction == RIGHT && new_direction == LEFT) ||
-            (snakes[i].direction == UP && new_direction == DOWN) ||
-            (snakes[i].direction == DOWN && new_direction == UP)) {
-            continue;
+        if (checkDirection(&snakes[i], key)) {
+            snakes[i].direction = new_direction;
         }
-
-        snakes[i].direction = new_direction;
     }
 }
 
