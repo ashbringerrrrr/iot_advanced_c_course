@@ -55,7 +55,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <ncurses/ncurses.h>
+#include <ncurses.h>
 #include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
@@ -216,24 +216,27 @@ void go(snake_t *head) {
     // Move head depending on direction
     switch(head->direction){
         case LEFT:
-            head->x = (head->x <= 0) ? max_x - 1 : head->x - 1;
+            head->x = head->x - 1;
             break;
         case RIGHT:
-            head->x = (head->x >= max_x - 1) ? 0 : head->x + 1;
+            head->x = head->x + 1;
             break;
         case UP:
-            head->y = (head->y <= MIN_Y) ? max_y - 1 : head->y - 1;
+            head->y = head->y - 1;
             break;
         case DOWN:
-            head->y = (head->y >= max_y - 1) ? MIN_Y : head->y + 1;
+            head->y = head->y + 1;
             break;
     }
+    
 }
 
 // Change direction for all snakes
 void changeAllDirections(snake_t snakes[], size_t num_snakes, const int32_t key) {
     for (size_t i = 0; i < num_snakes; i++) {
         if (!snakes[i].is_alive) continue; // Skip dead snakes
+
+          int new_direction = snakes[i].direction;
 
         // For second snake (WASD) handle both English and Russian layouts
         if (i == 1) {
@@ -243,38 +246,47 @@ void changeAllDirections(snake_t snakes[], size_t num_snakes, const int32_t key)
                 case 'w': case 'W':
                 // Russian layout
                 case 1094: case 1062: // Ц ц in Russian layout
-                    snakes[i].direction = UP;
+                    new_direction = UP;
                     break;
 
                 case 's': case 'S':
                 // Russian layout
                 case 1099: case 1067: // Ы ы in Russian layout
-                    snakes[i].direction = DOWN;
+                    new_direction = DOWN;
                     break;
 
                 case 'a': case 'A':
                 // Russian layout
                 case 1092: case 1060: // Ф ф in Russian layout
-                    snakes[i].direction = LEFT;
+                    new_direction = LEFT;
                     break;
 
                 case 'd': case 'D':
                 // Russian layout
                 case 1074: case 1042: // В в in Russian layout
-                    snakes[i].direction = RIGHT;
+                    new_direction = RIGHT;
                     break;
             }
         } else {
             // For first snake use arrows (layout independent)
             if (key == snakes[i].controls.down)
-                snakes[i].direction = DOWN;
+                new_direction = DOWN;
             else if (key == snakes[i].controls.up)
-                snakes[i].direction = UP;
+                new_direction = UP;
             else if (key == snakes[i].controls.right)
-                snakes[i].direction = RIGHT;
+                new_direction = RIGHT;
             else if (key == snakes[i].controls.left)
-                snakes[i].direction = LEFT;
+                new_direction = LEFT;
         }
+
+        if ((snakes[i].direction == LEFT && new_direction == RIGHT) ||
+            (snakes[i].direction == RIGHT && new_direction == LEFT) ||
+            (snakes[i].direction == UP && new_direction == DOWN) ||
+            (snakes[i].direction == DOWN && new_direction == UP)) {
+            continue;
+        }
+
+        snakes[i].direction = new_direction;
     }
 }
 
@@ -329,7 +341,11 @@ int checkAllFood(snake_t snakes[], size_t num_snakes, food_t *food) {
 
 // Check head collision with own tail
 int isCrush(snake_t *snake) {
-    // Always return 0 to disable death from self-intersection
+    for (size_t i = 1; i < snake->tsize; i++) {
+        if (snake->x == snake->tail[i].x && snake->y == snake->tail[i].y) {
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -402,9 +418,7 @@ int checkAllCollisions(snake_t snakes[], size_t num_snakes, int max_x, int max_y
             mvprintw(2, 0, "Snake %zd crashed into wall!              ", i + 1);
         }
 
-        // Check self-intersection (DISABLED - isCrush always returns 0)
         if (isCrush(&snakes[i])) {
-            // This code never executes as isCrush always returns 0
             snakes[i].is_alive = 0;
         }
     }
@@ -714,6 +728,7 @@ void playGame() {
 
         mvprintw(max_y/2 + 2, (max_x-40)/2, "Press any key to return to menu...");
         refresh();
+        timeout(-1);
         getch(); // Wait for any key press
     }
 
