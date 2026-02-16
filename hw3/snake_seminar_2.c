@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <ncurses/ncurses.h>
+#include <ncurses.h>
 #include <inttypes.h>
 #include <string.h>
 #include <unistd.h>
@@ -9,6 +9,7 @@
 #define MIN_Y  2
 enum {LEFT=1, UP, RIGHT, DOWN, STOP_GAME=KEY_F(10)};
 enum {MAX_TAIL_SIZE=100, START_TAIL_SIZE=3, MAX_FOOD_SIZE=20, FOOD_EXPIRE_SECONDS=10};
+enum {MOVE_DELAY_MS = 100}; // задержка между движениями (мс)
 
 
 // Здесь храним коды управления змейкой
@@ -48,6 +49,12 @@ typedef struct tail_t
     int y;
 } tail_t;
 
+void mytimeout(long milliseconds)
+{
+    clock_t start = clock();
+    while ((clock() - start) * 1000 / CLOCKS_PER_SEC < milliseconds);
+}
+
 void initTail(struct tail_t t[], size_t size)
 {
     struct tail_t init_t={0,0};
@@ -65,43 +72,72 @@ void initHead(struct snake_t *head, int x, int y)
 
 void initSnake(snake_t *head, size_t size, int x, int y)
 {
-tail_t*  tail  = (tail_t*) malloc(MAX_TAIL_SIZE*sizeof(tail_t));
+    tail_t*  tail  = (tail_t*) malloc(MAX_TAIL_SIZE*sizeof(tail_t));
     initTail(tail, MAX_TAIL_SIZE);
     initHead(head, x, y);
     head->tail = tail; // прикрепляем к голове хвост
     head->tsize = size+1;
     head->controls = default_controls;
+
+
+    // Начальное положение тела
+    head->tail[0].x = x;
+    head->tail[0].y = y;
+    for (int i = 1; i <= size; i++) {
+        head->tail[i].x = x - i;
+        head->tail[i].y = y;
+    }
+}
+
+/*
+ Освобождение памяти
+*/
+void freeSnake(snake_t *snake)
+{
+    free(snake->tail);
+    free(snake);
+}
+
+/*
+ Проверка на столкновения головы с хвостом
+*/
+int self_collision(snake_t *snake)
+{
+    for (size_t i = 1; i < snake->tsize; i++) {
+        if (snake->tail[i].x == snake->x && snake->tail[i].y == snake->y)
+            return 1;
+    }
+    return 0;
 }
 
 /*
  Движение головы с учетом текущего направления движения
  */
-void go(struct snake_t *head)
+void go(snake_t *head)
 {
-    char ch = '@';
-    int max_x=0, max_y=0;
-    getmaxyx(stdscr, max_y, max_x); // macro - размер терминала
-    mvprintw(head->y, head->x, " "); // очищаем один символ
+    int new_x = head->x, new_y = head->y;
+    int max_x, max_y;
+    getmaxyx(stdscr, max_y, max_x);
+
     switch (head->direction)
     {
-        case LEFT:
-            if(head->x <= 0) // Циклическое движение, чтобы не
-// уходить за пределы экрана
-                head->x = max_x;
-            mvprintw(head->y, --(head->x), "%c", ch);
-        break;
-        case RIGHT:
-            mvprintw(head->y, ++(head->x), "%c", ch);
-        break;
-        case UP:
-            mvprintw(--(head->y), head->x, "%c", ch);
-        break;
-        case DOWN:
-            mvprintw(++(head->y), head->x, "%c", ch);
-        break;
-        default:
-        break;
+        case LEFT:  new_x--; break;
+        case RIGHT: new_x++; break;
+        case UP:    new_y--; break;
+        case DOWN:  new_y++; break;
+        default: break;
     }
+
+    // Обработка выхода за пределы экрана
+    if (new_x < 0) new_x = max_x - 1;
+    if (new_x >= max_x) new_x = 0;
+    if (new_y < MIN_Y) new_y = max_y - 1;
+    if (new_y >= max_y) new_y = MIN_Y;
+
+    mvprintw(head->y, head->x, " ");
+    head->x = new_x;
+    head->y = new_y;
+    mvprintw(head->y, head->x, "@");
     refresh();
 }
 
@@ -122,40 +158,71 @@ void changeDirection(struct snake_t* snake, const int32_t key)
  */
 void goTail(struct snake_t *head)
 {
-    char ch = '*';
-    mvprintw(head->tail[head->tsize-1].y, head->tail[head->tsize-1].x, " ");
-    for(size_t i = head->tsize-1; i>0; i--)
+   mvprintw(head->tail[head->tsize - 1].y, head->tail[head->tsize - 1].x, " ");
+    for (size_t i = head->tsize - 1; i > 0; i--)
     {
-        head->tail[i] = head->tail[i-1];
-        if( head->tail[i].y || head->tail[i].x)
-            mvprintw(head->tail[i].y, head->tail[i].x, "%c", ch);
+        head->tail[i] = head->tail[i - 1];
+        if (head->tail[i].y || head->tail[i].x)
+            mvprintw(head->tail[i].y, head->tail[i].x, "*");
     }
+
     head->tail[0].x = head->x;
     head->tail[0].y = head->y;
 }
 
+/*
+ Отрисовка начальной змейки
+ */
+void drawSnake(snake_t *snake)
+{
+    mvprintw(snake->y, snake->x, "@");
+    for (size_t i = 1; i < snake->tsize; i++)
+        mvprintw(snake->tail[i].y, snake->tail[i].x, "*");
+    refresh();
+}
+
 int main()
 {
-snake_t* snake = (snake_t*)malloc(sizeof(snake_t));
-    initSnake(snake,START_TAIL_SIZE,10,10);
+    snake_t *snake = (snake_t*)malloc(sizeof(snake_t));
+    initSnake(snake, START_TAIL_SIZE, 10, 10);
     initscr();
     keypad(stdscr, TRUE); // Включаем F1, F2, стрелки и т.д.
     raw();                // Откдючаем line buffering
     noecho();            // Отключаем echo() режим при вызове getch
     curs_set(FALSE);    //Отключаем курсор
     mvprintw(0, 0,"Use arrows for control. Press 'F10' for EXIT");
-    timeout(0);    //Отключаем таймаут после нажатия клавиши в цикле
+    nodelay(stdscr, TRUE); 
+
+    drawSnake(snake);  
     int key_pressed=0;
-    while( key_pressed != STOP_GAME )
+    int game_over = 0;
+
+    while (!game_over && key_pressed != STOP_GAME)
     {
-        key_pressed = getch(); // Считываем клавишу
+        key_pressed = getch();
+        if (key_pressed != ERR)
+            changeDirection(snake, key_pressed);
+
         go(snake);
         goTail(snake);
-        timeout(100); // Задержка при отрисовке
-        changeDirection(snake, key_pressed);
+
+        if (self_collision(snake))
+            game_over = 1;
+
+        // Замена timeout на clock
+        mytimeout(MOVE_DELAY_MS);
     }
-    free(snake->tail);
-    free(snake);
+
+    if (game_over)
+    {
+        clear();
+        mvprintw(0, 0, "GAME OVER! Press any key to exit...");
+        refresh();
+        nodelay(stdscr, FALSE);
+        getch();
+    }
+
+    freeSnake(snake);
     endwin(); // Завершаем режим curses mod
     return 0;
 }
