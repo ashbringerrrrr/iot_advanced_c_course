@@ -3,6 +3,7 @@
 #include <time.h>
 #include <ncurses.h>
 #include <inttypes.h>
+#include <ctype.h>   
 #include <string.h>
 #include <unistd.h>
 
@@ -11,6 +12,7 @@ enum {LEFT=1, UP, RIGHT, DOWN, STOP_GAME=KEY_F(10)};
 enum {MAX_TAIL_SIZE=100, START_TAIL_SIZE=3, MAX_FOOD_SIZE=20, FOOD_EXPIRE_SECONDS=10};
 enum {MOVE_DELAY_MS = 100}; // задержка между движениями (мс)
 
+#define CONTROLS 2 
 
 // Здесь храним коды управления змейкой
 struct control_buttons
@@ -21,7 +23,10 @@ struct control_buttons
     int right;
 }control_buttons;
 
-struct control_buttons default_controls = {KEY_DOWN, KEY_UP, KEY_LEFT, KEY_RIGHT};
+struct control_buttons default_controls[CONTROLS] = {
+    {KEY_DOWN, KEY_UP, KEY_LEFT, KEY_RIGHT},
+    {'s', 'w', 'a', 'd'}                      
+};
 
 /*
  Голова змейки содержит в себе
@@ -77,7 +82,7 @@ void initSnake(snake_t *head, size_t size, int x, int y)
     initHead(head, x, y);
     head->tail = tail; // прикрепляем к голове хвост
     head->tsize = size+1;
-    head->controls = default_controls;
+    head->controls = default_controls[0]; 
 
 
     // Начальное положение тела
@@ -141,16 +146,53 @@ void go(snake_t *head)
     refresh();
 }
 
+int checkDirection(snake_t* snake, int32_t key) {
+    int new_direction = -1;
+
+    for (int i = 0; i < CONTROLS; i++) {
+        struct control_buttons ctrl = default_controls[i];
+        #define CMP(k1, k2) ((k1) == (k2) || (isalpha(k1) && tolower(k1) == tolower(k2)))
+
+        if (CMP(key, ctrl.down))  new_direction = DOWN;
+        else if (CMP(key, ctrl.up))    new_direction = UP;
+        else if (CMP(key, ctrl.right)) new_direction = RIGHT;
+        else if (CMP(key, ctrl.left))  new_direction = LEFT;
+
+        if (new_direction != -1) break;
+    }
+
+    if (new_direction == -1) return 1;
+
+    if ((snake->direction == LEFT && new_direction == RIGHT) ||
+        (snake->direction == RIGHT && new_direction == LEFT) ||
+        (snake->direction == UP && new_direction == DOWN) ||
+        (snake->direction == DOWN && new_direction == UP))
+        return 0;
+
+    return 1;
+}
+
 void changeDirection(struct snake_t* snake, const int32_t key)
 {
-    if (key == snake->controls.down)
-        snake->direction = DOWN;
-    else if (key == snake->controls.up)
-        snake->direction = UP;
-    else if (key == snake->controls.right)
-        snake->direction = RIGHT;
-    else if (key == snake->controls.left)
-        snake->direction = LEFT;
+    int new_direction = -1;
+
+    for (int i = 0; i < CONTROLS; i++) {
+        struct control_buttons ctrl = default_controls[i];
+        #define CMP(k1, k2) ((k1) == (k2) || (isalpha(k1) && tolower(k1) == tolower(k2)))
+
+        if (CMP(key, ctrl.down))  new_direction = DOWN;
+        else if (CMP(key, ctrl.up))    new_direction = UP;
+        else if (CMP(key, ctrl.right)) new_direction = RIGHT;
+        else if (CMP(key, ctrl.left))  new_direction = LEFT;
+
+        if (new_direction != -1) break;
+    }
+
+    if (new_direction == -1) return;
+
+    if (checkDirection(snake, key)) {
+        snake->direction = new_direction;
+    }
 }
 
 /*
